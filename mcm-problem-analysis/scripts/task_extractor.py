@@ -36,8 +36,8 @@ def extract_tasks(text):
     for sentence in sentences:
         sentence_lower = sentence.lower()
         
-        # 提取主任务
-        if any(pattern in sentence_lower for pattern in task_patterns) and ('?' in sentence or '!' in sentence or '。' in sentence):
+        # 提取主任务 - 更宽松的条件
+        if any(pattern in sentence_lower for pattern in task_patterns):
             tasks['main_tasks'].append(sentence)
         
         # 提取约束条件

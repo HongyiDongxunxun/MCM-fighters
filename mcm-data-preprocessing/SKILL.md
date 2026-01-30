@@ -7,16 +7,19 @@ description: Comprehensive MCM contest data preprocessing workflow. Use when pre
 
 ## 核心功能
 
-本技能提供 **"数据清洗 + 特征工程 + 特征选择 + 降维 + 数据可视化 + 指标生成"** 的完整预处理流程，为后续模型选择提供关键指标。
+本技能提供 **"数据清洗 + 特征工程 + 数据归一化 + 特征选择 + 降维 + 数据可视化 + 指标生成"** 的完整预处理流程，同时支持 **"优化问题专用预处理 + 统计问题专用预处理"**，为后续模型选择提供关键指标。
 
 ### 功能概述
 
 1. **数据清洗**：处理缺失值、异常值，确保数据完整性，支持多种数据格式
 2. **特征工程**：生成比赛相关特征、时间特征、统计特征、交互特征等，提取关键信息
-3. **特征选择**：基于相关性、方差、模型的特征选择方法，减少冗余特征
-4. **降维处理**：使用PCA等方法减少特征维度，提高模型训练效率
-5. **数据可视化**：数据分布、特征相关性、预处理效果的可视化，帮助理解数据
-6. **指标生成**：计算模型选择所需的关键指标，为模型选择提供依据
+3. **数据归一化**：支持standard、minmax、robust三种归一化方法，适应不同模型需求
+4. **特征选择**：基于相关性、方差、模型的特征选择方法，减少冗余特征
+5. **降维处理**：使用PCA等方法减少特征维度，提高模型训练效率
+6. **数据可视化**：数据分布、特征相关性、预处理效果的可视化，帮助理解数据
+7. **指标生成**：计算模型选择所需的关键指标，为模型选择提供依据
+8. **优化问题专用预处理**：提取约束条件、计算权重、检查可行性，适应运筹学方法需求
+9. **统计问题专用预处理**：分布检验、方差齐性检验、相关性分析，适应传统统计学方法需求
 
 ## 环境配置
 
@@ -44,11 +47,22 @@ python scripts/preprocess.py --input data.csv --output processed_data.csv --n_co
 
 # 处理不同格式的数据（Excel）
 python scripts/preprocess.py --input data.xlsx --output processed_data.csv --file_format excel
+
+# 执行预处理并启用数据归一化
+python scripts/preprocess.py --input data.csv --output processed_data.csv --normalization standard
+
+# 执行优化问题专用预处理
+python scripts/preprocess.py --input data.csv --output processed_data.csv --optimization True --normalization minmax
+
+# 执行统计问题专用预处理
+python scripts/preprocess.py --input data.csv --output processed_data.csv --statistics True --normalization standard
 ```
 
 ### 关键指标生成
 
 预处理完成后，将生成以下关键指标：
+
+#### 基础指标
 
 | 指标 | 说明 | 可能值 |
 |------|------|--------|
@@ -57,6 +71,29 @@ python scripts/preprocess.py --input data.xlsx --output processed_data.csv --fil
 | 序列平稳性 | 时间序列是否平稳 | 是 / 否 |
 | 动量趋势 | 是否存在明显动量 | 是 / 否 |
 | 比赛类型 | 比赛类别 | 男单 / 女单 / 其他 |
+
+#### 优化问题专用指标
+
+| 指标 | 说明 | 可能值 |
+|------|------|--------|
+| problem_type | 问题类型 | optimization |
+| n_objectives | 目标函数数量 | 整数 |
+| n_constraints | 约束条件数量 | 整数 |
+| has_weights | 是否有权重 | True / False |
+| data_feasibility | 数据可行性 | 可行 / 需检查 |
+| variable_types | 变量类型统计 | 包含continuous和categorical数量 |
+
+#### 统计问题专用指标
+
+| 指标 | 说明 | 可能值 |
+|------|------|--------|
+| problem_type | 问题类型 | statistics |
+| n_normal_variables | 正态分布变量数量 | 整数 |
+| normal_variable_ratio | 正态分布变量比例 | 0-1之间的小数 |
+| n_outliers | 异常值数量 | 整数 |
+| outlier_ratio | 异常值比例 | 百分比 |
+| n_correlated_pairs | 高相关变量对数量 | 整数 |
+| data_quality | 数据质量 | 良好 / 需处理 |
 
 ## 脚本实现
 
@@ -188,9 +225,20 @@ if __name__ == "__main__":
 
 ## 输出文件
 
-预处理完成后，将生成两个文件：
+预处理完成后，将生成以下文件：
+
+### 基础输出文件
 1. **processed_data.csv**：处理后的数据文件
 2. **indicators.json**：包含关键指标的JSON文件
+
+### 优化问题专用输出文件
+3. **optimization_info.json**：包含优化问题专用信息，如潜在目标函数、约束条件、权重等
+
+### 统计问题专用输出文件
+3. **statistics_info.json**：包含统计问题专用信息，如分布检验结果、方差齐性检验结果、相关性矩阵等
+
+### 可视化输出
+4. **visualizations/**：包含数据可视化结果的目录（如果启用了可视化）
 
 ## 使用建议
 

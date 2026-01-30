@@ -5,10 +5,12 @@ import json
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectKBest, f_regression, VarianceThreshold
-from scipy.stats import adfuller
+from scipy.stats import normaltest, levene, shapiro
+from statsmodels.tsa.stattools import adfuller
+from scipy.spatial.distance import cdist
 
 
 def parse_args():
@@ -19,6 +21,9 @@ def parse_args():
     parser.add_argument('--n_components', type=int, default=5, help='Number of PCA components')
     parser.add_argument('--feature_selection', type=bool, default=False, help='Enable feature selection')
     parser.add_argument('--visualization', type=bool, default=False, help='Enable data visualization')
+    parser.add_argument('--optimization', type=bool, default=False, help='Enable optimization-specific preprocessing')
+    parser.add_argument('--statistics', type=bool, default=False, help='Enable statistics-specific preprocessing')
+    parser.add_argument('--normalization', type=str, default='none', choices=['none', 'standard', 'minmax', 'robust'], help='Normalization method')
     return parser.parse_args()
 
 
@@ -131,6 +136,33 @@ def feature_selection(df, target_col='score'):
     
     return df[final_cols], selected_features
 
+def normalize_data(df, method='none'):
+    """数据归一化/标准化"""
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    X = df[numeric_cols]
+    
+    if method == 'standard':
+        scaler = StandardScaler()
+        X_normalized = scaler.fit_transform(X)
+        print("使用StandardScaler进行数据标准化")
+    elif method == 'minmax':
+        scaler = MinMaxScaler()
+        X_normalized = scaler.fit_transform(X)
+        print("使用MinMaxScaler进行数据归一化")
+    elif method == 'robust':
+        scaler = RobustScaler()
+        X_normalized = scaler.fit_transform(X)
+        print("使用RobustScaler进行数据标准化")
+    else:
+        return df
+    
+    normalized_df = df.copy()
+    for i, col in enumerate(numeric_cols):
+        normalized_df[f'{col}_normalized'] = X_normalized[:, i]
+    
+    return normalized_df
+
+
 def dimensionality_reduction(df, n_components=5):
     """降维处理"""
     numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -192,6 +224,121 @@ def data_visualization(df, output_dir='visualizations'):
     print(f"数据可视化结果已保存到 {output_dir} 目录")
 
 
+def optimization_preprocessing(df):
+    """适应运筹学方法的预处理"""
+    print("执行优化问题专用预处理...")
+    
+    # 1. 提取约束条件信息
+    constraints = {}
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    
+    # 2. 识别可能的目标函数和约束条件列
+    potential_objectives = []
+    potential_constraints = []
+    
+    for col in numeric_cols:
+        # 基于列名识别目标函数和约束条件
+        if any(keyword in col.lower() for keyword in ['profit', 'cost', 'revenue', 'objective', 'score']):
+            potential_objectives.append(col)
+        elif any(keyword in col.lower() for keyword in ['constraint', 'limit', 'capacity', 'requirement']):
+            potential_constraints.append(col)
+    
+    # 3. 计算权重（用于多目标优化）
+    weights = {}
+    if len(potential_objectives) > 1:
+        # 简单权重计算：基于标准差
+        for obj in potential_objectives:
+            std = df[obj].std()
+            weights[obj] = 1 / std if std > 0 else 1
+        # 归一化权重
+        total_weight = sum(weights.values())
+        for obj in weights:
+            weights[obj] /= total_weight
+    
+    # 4. 检查数据范围和可行性
+    feasibility = {
+        'min_values': df[numeric_cols].min().to_dict(),
+        'max_values': df[numeric_cols].max().to_dict(),
+        'mean_values': df[numeric_cols].mean().to_dict(),
+        'has_negative': any(df[col].min() < 0 for col in numeric_cols)
+    }
+    
+    # 5. 离散化连续变量（如果需要）
+    # 这里可以添加离散化逻辑
+    
+    return {
+        'potential_objectives': potential_objectives,
+        'potential_constraints': potential_constraints,
+        'weights': weights,
+        'feasibility': feasibility
+    }
+
+
+def statistics_preprocessing(df):
+    """适应传统统计学方法的预处理"""
+    print("执行统计问题专用预处理...")
+    
+    # 1. 分布检验
+    distribution_tests = {}
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    
+    for col in numeric_cols:
+        # 正态分布检验
+        stat, p_value = normaltest(df[col].dropna())
+        distribution_tests[col] = {
+            'normality_p_value': float(p_value),
+            'is_normal': bool(p_value > 0.05)
+        }
+    
+    # 2. 方差齐性检验（如果有分组变量）
+    homogeneity_tests = {}
+    # 检查是否有分组变量
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+    for cat_col in categorical_cols:
+        if df[cat_col].nunique() > 1:
+            # 对每个数值列进行方差齐性检验
+            for num_col in numeric_cols:
+                groups = [group[num_col].values for name, group in df.groupby(cat_col) if len(group) > 1]
+                if len(groups) > 1:
+                    stat, p_value = levene(*groups)
+                    homogeneity_tests[f'{cat_col}_{num_col}'] = {
+                        'levene_p_value': float(p_value),
+                        'homogeneous_variance': bool(p_value > 0.05)
+                    }
+    
+    # 3. 相关性分析
+    correlation_matrix = {}
+    corr_matrix = df[numeric_cols].corr()
+    for col1 in numeric_cols:
+        correlation_matrix[col1] = {}
+        for col2 in numeric_cols:
+            correlation_matrix[col1][col2] = float(corr_matrix.loc[col1, col2])
+    
+    # 4. 异常值检测（更详细）
+    outliers = {}
+    for col in numeric_cols:
+        Q1 = float(df[col].quantile(0.25))
+        Q3 = float(df[col].quantile(0.75))
+        IQR = Q3 - Q1
+        lower_bound = float(Q1 - 1.5 * IQR)
+        upper_bound = float(Q3 + 1.5 * IQR)
+        outlier_count = int(((df[col] < lower_bound) | (df[col] > upper_bound)).sum())
+        outlier_percentage = float(outlier_count / len(df) * 100)
+        outliers[col] = {
+            'lower_bound': lower_bound,
+            'upper_bound': upper_bound,
+            'outlier_count': outlier_count,
+            'outlier_percentage': outlier_percentage
+        }
+    
+    return {
+        'distribution_tests': distribution_tests,
+        'homogeneity_tests': homogeneity_tests,
+        'correlation_matrix': correlation_matrix,
+        'outliers': outliers
+    }
+
+
 def calculate_indicators(df):
     """计算关键指标"""
     indicators = {}
@@ -234,6 +381,63 @@ def calculate_indicators(df):
     return indicators
 
 
+def calculate_optimization_indicators(df):
+    """计算运筹学方法需要的指标"""
+    print("计算优化问题指标...")
+    
+    # 执行优化预处理
+    opt_info = optimization_preprocessing(df)
+    
+    indicators = {
+        'problem_type': 'optimization',
+        'n_objectives': len(opt_info['potential_objectives']),
+        'n_constraints': len(opt_info['potential_constraints']),
+        'has_weights': len(opt_info['weights']) > 0,
+        'data_feasibility': '可行' if not opt_info['feasibility']['has_negative'] else '需检查',
+        'variable_types': {
+            'continuous': len(df.select_dtypes(include=[np.number]).columns),
+            'categorical': len(df.select_dtypes(include=['object', 'category']).columns)
+        }
+    }
+    
+    return indicators
+
+
+def calculate_statistics_indicators(df):
+    """计算传统统计学方法需要的指标"""
+    print("计算统计问题指标...")
+    
+    # 执行统计预处理
+    stat_info = statistics_preprocessing(df)
+    
+    # 计算正态分布变量比例
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    normal_count = sum(1 for col in numeric_cols if stat_info['distribution_tests'][col]['is_normal'])
+    normal_ratio = normal_count / len(numeric_cols) if len(numeric_cols) > 0 else 0
+    
+    # 计算异常值比例
+    n_outliers = sum(info['outlier_count'] for info in stat_info['outliers'].values())
+    outlier_ratio = sum(info['outlier_percentage'] for info in stat_info['outliers'].values()) / len(stat_info['outliers']) if stat_info['outliers'] else 0
+    
+    # 计算高相关变量对数量
+    n_correlated_pairs = sum(1 for i, col1 in enumerate(numeric_cols) for col2 in numeric_cols[i+1:] if abs(df[col1].corr(df[col2])) > 0.7)
+    
+    # 计算数据质量
+    data_quality = '良好' if normal_ratio > 0.5 and outlier_ratio < 5 else '需处理'
+    
+    indicators = {
+        'problem_type': 'statistics',
+        'n_normal_variables': normal_count,
+        'normal_variable_ratio': normal_ratio,
+        'n_outliers': n_outliers,
+        'outlier_ratio': outlier_ratio,
+        'n_correlated_pairs': n_correlated_pairs,
+        'data_quality': data_quality
+    }
+    
+    return indicators
+
+
 def main():
     args = parse_args()
     
@@ -252,28 +456,59 @@ def main():
     df_features = feature_engineering(df_cleaned)
     print(f"特征工程后数据形状: {df_features.shape}")
     
-    # 4. 特征选择
+    # 4. 数据归一化
+    if args.normalization != 'none':
+        print("数据归一化...")
+        df_normalized = normalize_data(df_features, args.normalization)
+        print(f"归一化后数据形状: {df_normalized.shape}")
+    else:
+        df_normalized = df_features
+    
+    # 5. 特征选择
     if args.feature_selection:
         print("特征选择...")
-        df_features, selected_features = feature_selection(df_features)
-        print(f"特征选择后数据形状: {df_features.shape}")
+        df_selected, selected_features = feature_selection(df_normalized)
+        print(f"特征选择后数据形状: {df_selected.shape}")
         print(f"选择的特征数: {len(selected_features)}")
+    else:
+        df_selected = df_normalized
     
-    # 5. 降维处理
+    # 6. 降维处理
     print("降维处理...")
-    df_reduced = dimensionality_reduction(df_features, args.n_components)
+    df_reduced = dimensionality_reduction(df_selected, args.n_components)
     print(f"降维后数据形状: {df_reduced.shape}")
     
-    # 6. 数据可视化
+    # 7. 数据可视化
     if args.visualization:
         print("数据可视化...")
         data_visualization(df_reduced)
     
-    # 7. 计算关键指标
+    # 8. 计算关键指标
     print("计算关键指标...")
-    indicators = calculate_indicators(df_reduced)
+    base_indicators = calculate_indicators(df_reduced)
     
-    # 8. 保存结果
+    # 9. 优化问题专用预处理和指标
+    if args.optimization:
+        opt_indicators = calculate_optimization_indicators(df_reduced)
+        # 合并指标
+        indicators = {**base_indicators, **opt_indicators}
+        # 保存优化专用信息
+        opt_info = optimization_preprocessing(df_reduced)
+        with open('optimization_info.json', 'w', encoding='utf-8') as f:
+            json.dump(opt_info, f, ensure_ascii=False, indent=2)
+    # 10. 统计问题专用预处理和指标
+    elif args.statistics:
+        stat_indicators = calculate_statistics_indicators(df_reduced)
+        # 合并指标
+        indicators = {**base_indicators, **stat_indicators}
+        # 保存统计专用信息
+        stat_info = statistics_preprocessing(df_reduced)
+        with open('statistics_info.json', 'w', encoding='utf-8') as f:
+            json.dump(stat_info, f, ensure_ascii=False, indent=2)
+    else:
+        indicators = base_indicators
+    
+    # 11. 保存结果
     print("保存结果...")
     df_reduced.to_csv(args.output, index=False)
     # 保存指标到JSON文件
@@ -288,8 +523,12 @@ def main():
     print("\n输出文件：")
     print(f"1. 处理后的数据：{args.output}")
     print("2. 关键指标：indicators.json")
+    if args.optimization:
+        print("3. 优化问题信息：optimization_info.json")
+    elif args.statistics:
+        print("3. 统计问题信息：statistics_info.json")
     if args.visualization:
-        print("3. 可视化结果：visualizations/ 目录")
+        print("4. 可视化结果：visualizations/ 目录")
 
 
 if __name__ == "__main__":

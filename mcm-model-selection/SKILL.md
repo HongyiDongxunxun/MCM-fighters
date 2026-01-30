@@ -39,6 +39,11 @@ pip install numpy pandas matplotlib seaborn scikit-learn scipy statsmodels xgboo
 | 任意 | 任意 | SVM | 分类与回归任务 |
 | 任意 | 任意 | PCA-TOPSIS | 性能评估 + 因素分析 |
 | 时间序列 | 任意 | LSTM | 长时序依赖建模 |
+| 任意 | 任意 | Linear Programming | 资源优化、生产计划、运输问题 |
+| 任意 | 任意 | Dynamic Programming | 背包问题、投资组合、资源分配 |
+| 任意 | 任意 | Analytic Hierarchy Process (AHP) | 多准则决策、方案排序、权重确定 |
+| 任意 | 任意 | Hypothesis Testing | 显著性检验、差异分析、假设验证 |
+| 时间序列 | 任意 | Time Series Analysis (ARIMA) | 时间序列预测、趋势分析、季节性分析 |
 
 ## 使用方法
 
@@ -72,6 +77,21 @@ python scripts/dnn_model.py --input processed_data.csv --output predictions.csv
 
 # 运行模型集成
 python scripts/ensemble_model.py --input processed_data.csv --output predictions.csv
+
+# 运行线性规划模型
+python scripts/linear_programming.py --input lp_data.csv --output lp_results.csv --objective min
+
+# 运行动态规划模型
+python scripts/dynamic_programming.py --input dp_data.csv --output dp_results.csv --problem_type knapsack
+
+# 运行层次分析法模型
+python scripts/ahp_model.py --input ahp_data.csv --output ahp_results.csv
+
+# 运行假设检验模型
+python scripts/hypothesis_testing.py --input test_data.csv --output test_results.csv --test_type t-test
+
+# 运行时间序列分析模型
+python scripts/time_series_analysis.py --input ts_data.csv --output ts_results.csv --model arima --order 1,1,1
 ```
 
 ## 脚本实现
@@ -448,6 +468,670 @@ def main():
     df.to_csv(args.output, index=False)
     print("PCA-TOPSIS 模型分析完成！")
     print(f"分析结果已保存到 {args.output}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### 线性规划模型脚本 (scripts/linear_programming.py)
+
+```python
+import argparse
+import pandas as pd
+import numpy as np
+from scipy.optimize import linprog
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Linear Programming model for MCM')
+    parser.add_argument('--input', type=str, required=True, help='Input data file path')
+    parser.add_argument('--output', type=str, required=True, help='Output result file path')
+    parser.add_argument('--objective', type=str, choices=['max', 'min'], default='min', help='Objective function type')
+    return parser.parse_args()
+
+
+def load_data(file_path):
+    """加载数据"""
+    return pd.read_csv(file_path)
+
+
+def linear_programming_model(data, objective='min'):
+    """线性规划模型"""
+    print("执行线性规划模型...")
+    
+    # 提取目标函数系数
+    c = data.iloc[0, :-1].values.astype(float)
+    
+    # 提取约束条件
+    A_ub = data.iloc[1:-1, :-1].values.astype(float)
+    b_ub = data.iloc[1:-1, -1].values.astype(float)
+    
+    # 提取变量 bounds
+    bounds = []
+    for i in range(len(c)):
+        bounds.append((0, None))  # 默认非负约束
+    
+    # 如果是最大化问题，转换为最小化问题
+    if objective == 'max':
+        c = -c
+    
+    # 执行线性规划
+    result = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
+    
+    print("线性规划结果:")
+    print(f"目标函数值: {abs(result.fun) if objective == 'max' else result.fun}")
+    print(f"决策变量值: {result.x}")
+    print(f"状态: {'成功' if result.success else '失败'}")
+    if not result.success:
+        print(f"消息: {result.message}")
+    
+    return result
+
+
+def save_results(result, output_path, objective='min'):
+    """保存结果"""
+    results = {
+        'status': 'success' if result.success else 'failed',
+        'objective_value': abs(result.fun) if objective == 'max' else result.fun,
+        'variables': list(result.x),
+        'message': result.message
+    }
+    
+    df = pd.DataFrame(results)
+    df.to_csv(output_path, index=False)
+    print(f"结果已保存到: {output_path}")
+
+
+def main():
+    args = parse_args()
+    data = load_data(args.input)
+    result = linear_programming_model(data, args.objective)
+    save_results(result, args.output, args.objective)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### 动态规划模型脚本 (scripts/dynamic_programming.py)
+
+```python
+import argparse
+import pandas as pd
+import numpy as np
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Dynamic Programming model for MCM')
+    parser.add_argument('--input', type=str, required=True, help='Input data file path')
+    parser.add_argument('--output', type=str, required=True, help='Output result file path')
+    parser.add_argument('--problem_type', type=str, choices=['knapsack', 'investment', 'resource_allocation'], default='knapsack', help='Dynamic programming problem type')
+    return parser.parse_args()
+
+
+def load_data(file_path):
+    """加载数据"""
+    return pd.read_csv(file_path)
+
+
+def knapsack_problem(values, weights, capacity):
+    """背包问题"""
+    n = len(values)
+    dp = np.zeros((n + 1, capacity + 1))
+    
+    for i in range(1, n + 1):
+        for w in range(1, capacity + 1):
+            if weights[i-1] <= w:
+                dp[i][w] = max(dp[i-1][w], dp[i-1][w-weights[i-1]] + values[i-1])
+            else:
+                dp[i][w] = dp[i-1][w]
+    
+    # 回溯找出选择的物品
+    selected = []
+    w = capacity
+    for i in range(n, 0, -1):
+        if dp[i][w] != dp[i-1][w]:
+            selected.append(i-1)
+            w -= weights[i-1]
+    selected.reverse()
+    
+    return dp[n][capacity], selected
+
+
+def investment_problem(returns, budget):
+    """投资组合问题"""
+    n = len(returns)
+    dp = np.zeros(budget + 1)
+    
+    for i in range(n):
+        for w in range(budget, 0, -1):
+            for k in range(1, w + 1):
+                if dp[w - k] + returns[i] * k > dp[w]:
+                    dp[w] = dp[w - k] + returns[i] * k
+    
+    return dp[budget]
+
+
+def resource_allocation_problem(resources, projects):
+    """资源分配问题"""
+    n = len(projects)
+    m = resources
+    dp = np.zeros((n + 1, m + 1))
+    
+    for i in range(1, n + 1):
+        for r in range(1, m + 1):
+            max_value = 0
+            for k in range(r + 1):
+                value = projects[i-1][k]
+                if value > max_value:
+                    max_value = value
+            dp[i][r] = max(dp[i-1][r], max_value)
+    
+    return dp[n][m]
+
+
+def dynamic_programming_model(data, problem_type='knapsack'):
+    """动态规划模型"""
+    print(f"执行动态规划模型 - {problem_type}问题...")
+    
+    if problem_type == 'knapsack':
+        # 背包问题：values, weights, capacity
+        values = data['value'].values
+        weights = data['weight'].values
+        capacity = int(data['capacity'].iloc[0])
+        max_value, selected = knapsack_problem(values, weights, capacity)
+        print(f"最大价值: {max_value}")
+        print(f"选择的物品: {selected}")
+        return {'max_value': max_value, 'selected': selected}
+    
+    elif problem_type == 'investment':
+        # 投资问题：returns, budget
+        returns = data['return_rate'].values
+        budget = int(data['budget'].iloc[0])
+        max_return = investment_problem(returns, budget)
+        print(f"最大回报: {max_return}")
+        return {'max_return': max_return}
+    
+    elif problem_type == 'resource_allocation':
+        # 资源分配问题：resources, projects
+        resources = int(data['resources'].iloc[0])
+        projects = []
+        for col in data.columns:
+            if col != 'resources':
+                projects.append(data[col].values)
+        max_value = resource_allocation_problem(resources, projects)
+        print(f"最大价值: {max_value}")
+        return {'max_value': max_value}
+
+
+def save_results(results, output_path):
+    """保存结果"""
+    df = pd.DataFrame([results])
+    df.to_csv(output_path, index=False)
+    print(f"结果已保存到: {output_path}")
+
+
+def main():
+    args = parse_args()
+    data = load_data(args.input)
+    results = dynamic_programming_model(data, args.problem_type)
+    save_results(results, args.output)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### 层次分析法模型脚本 (scripts/ahp_model.py)
+
+```python
+import argparse
+import pandas as pd
+import numpy as np
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Analytic Hierarchy Process (AHP) model for MCM')
+    parser.add_argument('--input', type=str, required=True, help='Input data file path')
+    parser.add_argument('--output', type=str, required=True, help='Output result file path')
+    return parser.parse_args()
+
+
+def load_data(file_path):
+    """加载数据"""
+    return pd.read_csv(file_path)
+
+
+def calculate_weight(matrix):
+    """计算权重"""
+    # 计算特征值和特征向量
+    eigenvalues, eigenvectors = np.linalg.eig(matrix)
+    # 找到最大特征值及其对应的特征向量
+    max_eigenvalue_index = np.argmax(eigenvalues)
+    max_eigenvalue = eigenvalues[max_eigenvalue_index]
+    max_eigenvector = eigenvectors[:, max_eigenvalue_index]
+    # 归一化特征向量得到权重
+    weight = max_eigenvector / np.sum(max_eigenvector)
+    return weight.real, max_eigenvalue.real
+
+
+def consistency_check(matrix, max_eigenvalue, n):
+    """一致性检验"""
+    if n == 1:
+        return True, 0, 0
+    
+    # 计算一致性指标CI
+    ci = (max_eigenvalue - n) / (n - 1)
+    
+    # 随机一致性指标RI
+    ri_dict = {
+        1: 0, 2: 0, 3: 0.58, 4: 0.90, 5: 1.12,
+        6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49
+    }
+    ri = ri_dict.get(n, 1.5)
+    
+    # 计算一致性比率CR
+    cr = ci / ri
+    
+    # 判断一致性
+    consistent = cr < 0.1
+    
+    return consistent, ci, cr
+
+
+def ahp_model(data):
+    """层次分析法模型"""
+    print("执行层次分析法(AHP)模型...")
+    
+    # 提取准则层判断矩阵
+    criteria_matrix = data.iloc[:, 1:].values.astype(float)
+    n_criteria = criteria_matrix.shape[0]
+    
+    print(f"准则层判断矩阵大小: {n_criteria}x{n_criteria}")
+    
+    # 计算准则层权重
+    criteria_weights, max_eigenvalue = calculate_weight(criteria_matrix)
+    
+    # 一致性检验
+    consistent, ci, cr = consistency_check(criteria_matrix, max_eigenvalue, n_criteria)
+    print(f"准则层一致性检验: {'通过' if consistent else '未通过'}")
+    print(f"CI: {ci:.4f}, CR: {cr:.4f}")
+    
+    # 提取方案层判断矩阵
+    # 假设数据格式为：方案名称 + 每个准则下的判断矩阵
+    n_alternatives = int((data.shape[0] - n_criteria - 1) / n_criteria)
+    alternative_matrices = []
+    
+    for i in range(n_criteria):
+        start_row = n_criteria + 1 + i * n_alternatives
+        end_row = start_row + n_alternatives
+        matrix = data.iloc[start_row:end_row, 1:1+n_alternatives].values.astype(float)
+        alternative_matrices.append(matrix)
+    
+    # 计算方案层权重
+    alternative_weights = []
+    for i, matrix in enumerate(alternative_matrices):
+        weight, ev = calculate_weight(matrix)
+        alternative_weights.append(weight)
+        # 一致性检验
+        alt_consistent, alt_ci, alt_cr = consistency_check(matrix, ev, n_alternatives)
+        print(f"方案层-{i+1}一致性检验: {'通过' if alt_consistent else '未通过'}")
+        print(f"CI: {alt_ci:.4f}, CR: {alt_cr:.4f}")
+    
+    # 计算总权重
+    alternative_weights = np.array(alternative_weights)
+    total_weights = np.dot(criteria_weights, alternative_weights)
+    
+    # 排序方案
+    rankings = np.argsort(total_weights)[::-1] + 1  # 方案编号从1开始
+    
+    print("\n结果:")
+    print(f"准则层权重: {criteria_weights}")
+    print(f"方案层权重矩阵:\n{alternative_weights}")
+    print(f"总权重: {total_weights}")
+    print(f"方案排名: {rankings}")
+    
+    return {
+        'criteria_weights': criteria_weights.tolist(),
+        'alternative_weights': alternative_weights.tolist(),
+        'total_weights': total_weights.tolist(),
+        'rankings': rankings.tolist(),
+        'consistent': consistent,
+        'ci': ci,
+        'cr': cr
+    }
+
+
+def save_results(results, output_path):
+    """保存结果"""
+    # 保存权重和排名
+    weights_df = pd.DataFrame({
+        'total_weight': results['total_weights'],
+        'ranking': results['rankings']
+    })
+    weights_df.to_csv(output_path, index_label='alternative')
+    print(f"结果已保存到: {output_path}")
+
+
+def main():
+    args = parse_args()
+    data = load_data(args.input)
+    results = ahp_model(data)
+    save_results(results, args.output)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### 假设检验模型脚本 (scripts/hypothesis_testing.py)
+
+```python
+import argparse
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Hypothesis Testing model for MCM')
+    parser.add_argument('--input', type=str, required=True, help='Input data file path')
+    parser.add_argument('--output', type=str, required=True, help='Output result file path')
+    parser.add_argument('--test_type', type=str, choices=['t-test', 'z-test', 'chi-square', 'f-test'], default='t-test', help='Type of hypothesis test')
+    parser.add_argument('--alpha', type=float, default=0.05, help='Significance level')
+    return parser.parse_args()
+
+
+def load_data(file_path):
+    """加载数据"""
+    return pd.read_csv(file_path)
+
+
+def t_test(data, alpha=0.05):
+    """t检验"""
+    # 单样本t检验
+    if data.shape[1] == 1:
+        sample = data.iloc[:, 0].values
+        # 假设总体均值为0
+        t_stat, p_value = stats.ttest_1samp(sample, 0)
+        print(f"单样本t检验: t统计量 = {t_stat:.4f}, p值 = {p_value:.4f}")
+        
+        # 双侧检验
+        reject_null = p_value < alpha
+        print(f"显著性水平α = {alpha}, {'拒绝' if reject_null else '不拒绝'}原假设")
+        
+        return {
+            'test_type': 'one-sample t-test',
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'alpha': alpha,
+            'reject_null': reject_null
+        }
+    
+    # 两样本t检验
+    elif data.shape[1] == 2:
+        sample1 = data.iloc[:, 0].values
+        sample2 = data.iloc[:, 1].values
+        
+        # 方差齐性检验
+        levene_stat, levene_p = stats.levene(sample1, sample2)
+        equal_var = levene_p > alpha
+        
+        t_stat, p_value = stats.ttest_ind(sample1, sample2, equal_var=equal_var)
+        print(f"两样本t检验: t统计量 = {t_stat:.4f}, p值 = {p_value:.4f}")
+        print(f"方差齐性检验: {'通过' if equal_var else '未通过'}")
+        
+        reject_null = p_value < alpha
+        print(f"显著性水平α = {alpha}, {'拒绝' if reject_null else '不拒绝'}原假设")
+        
+        return {
+            'test_type': 'two-sample t-test',
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'alpha': alpha,
+            'reject_null': reject_null,
+            'equal_variance': equal_var
+        }
+
+
+def z_test(data, alpha=0.05, population_std=None):
+    """z检验"""
+    # 单样本z检验
+    if data.shape[1] == 1:
+        sample = data.iloc[:, 0].values
+        sample_mean = np.mean(sample)
+        sample_std = np.std(sample, ddof=1)
+        n = len(sample)
+        
+        # 如果没有提供总体标准差，使用样本标准差
+        if population_std is None:
+            population_std = sample_std
+        
+        # 假设总体均值为0
+        z_stat = (sample_mean - 0) / (population_std / np.sqrt(n))
+        # 双侧检验
+        p_value = 2 * (1 - stats.norm.cdf(np.abs(z_stat)))
+        
+        print(f"单样本z检验: z统计量 = {z_stat:.4f}, p值 = {p_value:.4f}")
+        
+        reject_null = p_value < alpha
+        print(f"显著性水平α = {alpha}, {'拒绝' if reject_null else '不拒绝'}原假设")
+        
+        return {
+            'test_type': 'one-sample z-test',
+            'z_statistic': z_stat,
+            'p_value': p_value,
+            'alpha': alpha,
+            'reject_null': reject_null
+        }
+
+
+def chi_square_test(data, alpha=0.05):
+    """卡方检验"""
+    # 卡方独立性检验
+    if data.shape[1] == 2:
+        # 创建列联表
+        contingency_table = pd.crosstab(data.iloc[:, 0], data.iloc[:, 1])
+        print(f"列联表:\n{contingency_table}")
+        
+        chi2_stat, p_value, dof, expected = stats.chi2_contingency(contingency_table)
+        print(f"卡方检验: 卡方统计量 = {chi2_stat:.4f}, p值 = {p_value:.4f}, 自由度 = {dof}")
+        
+        reject_null = p_value < alpha
+        print(f"显著性水平α = {alpha}, {'拒绝' if reject_null else '不拒绝'}原假设")
+        
+        return {
+            'test_type': 'chi-square independence test',
+            'chi2_statistic': chi2_stat,
+            'p_value': p_value,
+            'degrees_of_freedom': dof,
+            'alpha': alpha,
+            'reject_null': reject_null
+        }
+
+
+def f_test(data, alpha=0.05):
+    """F检验"""
+    # 两样本方差齐性检验
+    if data.shape[1] == 2:
+        sample1 = data.iloc[:, 0].values
+        sample2 = data.iloc[:, 1].values
+        
+        f_stat, p_value = stats.f_oneway(sample1, sample2)
+        print(f"F检验: F统计量 = {f_stat:.4f}, p值 = {p_value:.4f}")
+        
+        reject_null = p_value < alpha
+        print(f"显著性水平α = {alpha}, {'拒绝' if reject_null else '不拒绝'}原假设")
+        
+        return {
+            'test_type': 'f-test (one-way ANOVA)',
+            'f_statistic': f_stat,
+            'p_value': p_value,
+            'alpha': alpha,
+            'reject_null': reject_null
+        }
+
+
+def hypothesis_testing_model(data, test_type='t-test', alpha=0.05):
+    """假设检验模型"""
+    print(f"执行假设检验模型 - {test_type}...")
+    
+    if test_type == 't-test':
+        return t_test(data, alpha)
+    elif test_type == 'z-test':
+        return z_test(data, alpha)
+    elif test_type == 'chi-square':
+        return chi_square_test(data, alpha)
+    elif test_type == 'f-test':
+        return f_test(data, alpha)
+
+
+def save_results(results, output_path):
+    """保存结果"""
+    df = pd.DataFrame([results])
+    df.to_csv(output_path, index=False)
+    print(f"结果已保存到: {output_path}")
+
+
+def main():
+    args = parse_args()
+    data = load_data(args.input)
+    results = hypothesis_testing_model(data, args.test_type, args.alpha)
+    save_results(results, args.output)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### 时间序列分析模型脚本 (scripts/time_series_analysis.py)
+
+```python
+import argparse
+import pandas as pd
+import numpy as np
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+import matplotlib.pyplot as plt
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Time Series Analysis model for MCM')
+    parser.add_argument('--input', type=str, required=True, help='Input data file path')
+    parser.add_argument('--output', type=str, required=True, help='Output result file path')
+    parser.add_argument('--model', type=str, choices=['arima', 'ma', 'ar'], default='arima', help='Time series model type')
+    parser.add_argument('--order', type=str, default='1,1,1', help='ARIMA model order (p,d,q)')
+    parser.add_argument('--forecast_steps', type=int, default=5, help='Number of steps to forecast')
+    return parser.parse_args()
+
+
+def load_data(file_path):
+    """加载数据"""
+    return pd.read_csv(file_path)
+
+
+def adf_test(series):
+    """单位根检验"""
+    print("执行单位根检验(ADF)...)
+")
+    result = adfuller(series, autolag='AIC')
+    print(f"ADF统计量: {result[0]:.4f}")
+    print(f"p值: {result[1]:.4f}")
+    print(f"滞后阶数: {result[2]}")
+    print(f"观测值数量: {result[3]}")
+    print("临界值:")
+    for key, value in result[4].items():
+        print(f"  {key}: {value:.4f}")
+    print(f"显著性水平α=0.05时, {'拒绝' if result[1] < 0.05 else '不拒绝'}原假设")
+    print(f"时间序列{'是' if result[1] < 0.05 else '不是'}平稳的")
+    return result
+
+
+def arima_model(data, order=(1, 1, 1), forecast_steps=5):
+    """ARIMA模型"""
+    print(f"执行ARIMA模型，阶数: {order}...")
+    
+    # 提取时间序列数据
+    if data.shape[1] == 1:
+        series = data.iloc[:, 0].values
+    else:
+        series = data.iloc[:, 1].values
+    
+    # 执行单位根检验
+    adf_result = adf_test(series)
+    
+    # 拟合ARIMA模型
+    model = ARIMA(series, order=order)
+    model_fit = model.fit()
+    
+    print("\n模型拟合结果:")
+    print(model_fit.summary())
+    
+    # 模型诊断
+    residuals = model_fit.resid
+    print(f"\n残差均值: {np.mean(residuals):.4f}")
+    print(f"残差标准差: {np.std(residuals):.4f}")
+    
+    # 预测
+    forecast = model_fit.forecast(steps=forecast_steps)
+    print(f"\n预测未来{forecast_steps}步:")
+    print(forecast)
+    
+    return {
+        'model_type': 'ARIMA',
+        'order': order,
+        'forecast': forecast.tolist(),
+        'residuals_mean': np.mean(residuals),
+        'residuals_std': np.std(residuals),
+        'adf_pvalue': adf_result[1]
+    }
+
+
+def ma_model(data, q=1, forecast_steps=5):
+    """MA模型"""
+    print(f"执行MA模型，阶数: {q}...")
+    return arima_model(data, order=(0, 0, q), forecast_steps=forecast_steps)
+
+
+def ar_model(data, p=1, forecast_steps=5):
+    """AR模型"""
+    print(f"执行AR模型，阶数: {p}...")
+    return arima_model(data, order=(p, 0, 0), forecast_steps=forecast_steps)
+
+
+def time_series_analysis_model(data, model_type='arima', order=(1, 1, 1), forecast_steps=5):
+    """时间序列分析模型"""
+    if model_type == 'arima':
+        return arima_model(data, order=order, forecast_steps=forecast_steps)
+    elif model_type == 'ma':
+        q = order[2]
+        return ma_model(data, q=q, forecast_steps=forecast_steps)
+    elif model_type == 'ar':
+        p = order[0]
+        return ar_model(data, p=p, forecast_steps=forecast_steps)
+
+
+def save_results(results, output_path):
+    """保存结果"""
+    # 保存预测结果
+    forecast_df = pd.DataFrame({
+        'forecast': results['forecast']
+    })
+    forecast_df.to_csv(output_path, index_label='step')
+    print(f"\n预测结果已保存到: {output_path}")
+
+
+def main():
+    args = parse_args()
+    data = load_data(args.input)
+    
+    # 解析order参数
+    order = tuple(map(int, args.order.split(',')))
+    
+    results = time_series_analysis_model(data, args.model, order, args.forecast_steps)
+    save_results(results, args.output)
 
 
 if __name__ == "__main__":

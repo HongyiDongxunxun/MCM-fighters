@@ -2,20 +2,11 @@ import argparse
 import json
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-from sklearn.ensemble import VotingRegressor, StackingRegressor
-from sklearn.linear_model import LinearRegression, Lasso, Ridge
-from sklearn.svm import SVR
-from sklearn.ensemble import RandomForestRegressor
-import xgboost as xgb
-import lightgbm as lgb
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='MCM model selector')
     parser.add_argument('--indicators', type=str, required=True, help='Indicators JSON file path')
-    parser.add_argument('--auto_tune', type=bool, default=False, help='Enable automatic parameter tuning')
-    parser.add_argument('--ensemble', type=bool, default=False, help='Enable model ensemble')
     return parser.parse_args()
 
 
@@ -27,94 +18,46 @@ def load_indicators(file_path):
 
 def select_model(indicators):
     """根据指标选择模型"""
-    data_size = indicators.get('data_size', '中')
-    feature_dim = indicators.get('feature_dim', '低')
-    stationarity = indicators.get('stationarity', '否')
-    momentum = indicators.get('momentum', '否')
     match_type = indicators.get('match_type', '其他')
+    problem_type = indicators.get('problem_type', 'optimization')
     
-    # 模型选择逻辑
-    if data_size == '小':
-        if feature_dim == '低':
-            return 'gm_11', 'GM (1,1) 灰色预测'
+    # 优先根据问题类型选择模型
+    if problem_type == 'optimization':
+        # 优化问题 - 选择运筹学方法
+        if match_type == 'resource_allocation':
+            return 'dynamic_programming', 'Dynamic Programming (Resource Allocation)'
+        elif match_type == 'decision_making':
+            return 'ahp', 'Analytic Hierarchy Process (AHP)'
+        elif match_type == 'nonlinear_optimization':
+            return 'nonlinear_programming', 'Nonlinear Programming'
+        elif match_type == 'integer_optimization':
+            return 'integer_programming', 'Integer Programming'
+        elif match_type == 'multi_objective':
+            return 'multi_objective_optimization', 'Multi-Objective Optimization'
         else:
-            return 'lasso', 'LASSO Regression'
-    elif data_size == '中':
-        if feature_dim == '低':
-            return 'ridge', 'Ridge Regression'
+            return 'linear_programming', 'Linear Programming'
+    elif problem_type == 'hypothesis_testing':
+        # 假设检验问题 - 选择传统统计学方法
+        return 'hypothesis_testing', 'Hypothesis Testing'
+    elif problem_type == 'time_series':
+        # 时间序列问题 - 选择时间序列分析方法
+        return 'time_series', 'Time Series Analysis (ARIMA)'
+    elif problem_type == 'economic_analysis':
+        # 经济分析问题 - 选择经济学方法
+        if match_type == 'game_theory':
+            return 'game_theory', 'Game Theory'
+        elif match_type == 'input_output':
+            return 'input_output_analysis', 'Input-Output Analysis'
+        elif match_type == 'cost_benefit':
+            return 'cost_benefit_analysis', 'Cost-Benefit Analysis'
         else:
-            if momentum == '是':
-                return 'xgboost_shap', 'XGBoost+SHAP'
-            else:
-                return 'svm', 'SVM'
-    else:  # 大
-        if feature_dim == '低':
-            return 'lightgbm', 'LightGBM'
-        else:
-            if momentum == '是':
-                return 'random_forest_stacking', 'Random Forest + Stacking'
-            else:
-                return 'dnn', 'Deep Neural Network'
+            return 'economic_analysis', 'Economic Analysis'
     
     # 默认模型
-    return 'svm', 'SVM'
+    return 'linear_programming', 'Linear Programming'
 
 
-def auto_tune_model(model, X, y):
-    """自动参数调优"""
-    print("执行自动参数调优...")
-    
-    if isinstance(model, xgb.XGBRegressor):
-        param_dist = {
-            'n_estimators': [50, 100, 150],
-            'learning_rate': [0.01, 0.05, 0.1],
-            'max_depth': [3, 5, 7],
-            'subsample': [0.7, 0.8, 0.9]
-        }
-        search = RandomizedSearchCV(model, param_dist, n_iter=10, cv=3, scoring='r2', random_state=42)
-        search.fit(X, y)
-        print(f"最优参数: {search.best_params_}")
-        print(f"最优得分: {search.best_score_:.4f}")
-        return search.best_estimator_
-    
-    elif isinstance(model, RandomForestRegressor):
-        param_dist = {
-            'n_estimators': [100, 200, 300],
-            'max_depth': [5, 10, 15],
-            'min_samples_split': [2, 5, 10]
-        }
-        search = RandomizedSearchCV(model, param_dist, n_iter=10, cv=3, scoring='r2', random_state=42)
-        search.fit(X, y)
-        print(f"最优参数: {search.best_params_}")
-        print(f"最优得分: {search.best_score_:.4f}")
-        return search.best_estimator_
-    
-    else:
-        print("该模型类型暂不支持自动参数调优")
-        return model
 
-def create_ensemble_model():
-    """创建集成模型"""
-    print("创建模型集成...")
-    
-    # 定义基础模型
-    base_models = [
-        ('xgboost', xgb.XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)),
-        ('rf', RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)),
-        ('svr', SVR(kernel='rbf', C=1.0, gamma='scale'))
-    ]
-    
-    # 定义元模型
-    meta_model = LinearRegression()
-    
-    # 构建堆叠模型
-    ensemble_model = StackingRegressor(estimators=base_models, final_estimator=meta_model)
-    
-    print("集成模型创建完成：StackingRegressor")
-    print(f"基础模型数量: {len(base_models)}")
-    print(f"元模型: {type(meta_model).__name__}")
-    
-    return ensemble_model
 
 def main():
     args = parse_args()
@@ -124,61 +67,85 @@ def main():
     print(f"基于指标选择的最优模型：{model_name} ({model_code})")
     print("\n模型信息：")
     
-    if model_code == 'gm_11':
+    # 保留的模型
+    if model_code == 'gray_model':
         print("- 适用场景：短期转折点预测")
         print("- 优势：数据量小、特征维度低时表现良好")
         print("- 运行命令：python scripts/gray_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'lasso':
-        print("- 适用场景：特征选择 + 回归预测")
-        print("- 优势：自动选择重要特征，避免过拟合")
-        print("- 运行命令：python scripts/lasso_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'ridge':
-        print("- 适用场景：正则化回归预测")
-        print("- 优势：减少过拟合，提高模型稳定性")
-        print("- 运行命令：python scripts/ridge_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'xgboost_shap':
-        print("- 适用场景：特征重要性分析 + 动量预测")
-        print("- 优势：处理高维度数据，提供特征解释")
-        print("- 运行命令：python scripts/xgboost_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'lightgbm':
-        print("- 适用场景：高效梯度提升预测")
-        print("- 优势：训练速度快，内存消耗低")
-        print("- 运行命令：python scripts/lightgbm_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'random_forest_stacking':
-        print("- 适用场景：长时序动量预测")
-        print("- 优势：集成多个模型，提高预测准确性")
-        print("- 运行命令：python scripts/random_forest_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'dnn':
-        print("- 适用场景：复杂模式学习 + 预测")
-        print("- 优势：学习复杂的非线性关系")
-        print("- 运行命令：python scripts/dnn_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'svm':
-        print("- 适用场景：分类与回归任务")
-        print("- 优势：泛化能力强，适合各种数据类型")
-        print("- 运行命令：python scripts/svm_model.py --input processed_data.csv --output predictions.csv")
-    elif model_code == 'pca_topsis':
+    elif model_code == 'topsis':
         print("- 适用场景：性能评估 + 因素分析")
         print("- 优势：综合评估多个因素，提供排名")
         print("- 运行命令：python scripts/topsis_model.py --input processed_data.csv --output rankings.csv")
+    # 运筹学模型
+    elif model_code == 'linear_programming':
+        print("- 适用场景：资源优化、生产计划、运输问题")
+        print("- 优势：求解线性约束下的最优解")
+        print("- 运行命令：python scripts/linear_programming.py --input lp_data.csv --output lp_results.csv --objective min")
+    elif model_code == 'dynamic_programming':
+        print("- 适用场景：背包问题、投资组合、资源分配")
+        print("- 优势：求解多阶段决策问题的最优解")
+        print("- 运行命令：python scripts/dynamic_programming.py --input dp_data.csv --output dp_results.csv --problem_type knapsack")
+    elif model_code == 'ahp':
+        print("- 适用场景：多准则决策、方案排序、权重确定")
+        print("- 优势：将定性分析与定量分析相结合")
+        print("- 运行命令：python scripts/ahp_model.py --input ahp_data.csv --output ahp_results.csv")
+    elif model_code == 'nonlinear_programming':
+        print("- 适用场景：非线性约束优化、生产调度、投资组合")
+        print("- 优势：求解复杂的非线性优化问题")
+        print("- 运行命令：python scripts/nonlinear_programming.py --input nlp_data.csv --output nlp_results.csv")
+    elif model_code == 'integer_programming':
+        print("- 适用场景：整数决策变量优化、排班问题、选址问题")
+        print("- 优势：处理离散决策变量的优化问题")
+        print("- 运行命令：python scripts/integer_programming.py --input ip_data.csv --output ip_results.csv")
+    elif model_code == 'multi_objective_optimization':
+        print("- 适用场景：多目标决策、资源分配、权衡分析")
+        print("- 优势：处理多个冲突目标的优化问题")
+        print("- 运行命令：python scripts/multi_objective_optimization.py --input moo_data.csv --output moo_results.csv")
+    # 经济学模型
+    elif model_code == 'game_theory':
+        print("- 适用场景：策略决策、竞争分析、谈判模型")
+        print("- 优势：分析多主体交互决策")
+        print("- 运行命令：python scripts/game_theory.py --input game_data.csv --output game_results.csv")
+    elif model_code == 'input_output_analysis':
+        print("- 适用场景：经济影响分析、产业关联分析")
+        print("- 优势：量化经济系统中各部门的相互依赖关系")
+        print("- 运行命令：python scripts/input_output_analysis.py --input io_data.csv --output io_results.csv")
+    elif model_code == 'cost_benefit_analysis':
+        print("- 适用场景：项目评估、投资决策、政策分析")
+        print("- 优势：系统化评估成本与收益")
+        print("- 运行命令：python scripts/cost_benefit_analysis.py --input cba_data.csv --output cba_results.csv")
+    elif model_code == 'economic_analysis':
+        print("- 适用场景：综合经济分析、市场预测、政策评估")
+        print("- 优势：提供全面的经济视角分析")
+        print("- 运行命令：python scripts/economic_analysis.py --input economic_data.csv --output economic_results.csv")
+    # 传统统计学模型
+    elif model_code == 'hypothesis_testing':
+        print("- 适用场景：显著性检验、差异分析、假设验证")
+        print("- 优势：提供统计显著性判断")
+        print("- 运行命令：python scripts/hypothesis_testing.py --input test_data.csv --output test_results.csv --test_type t-test")
+    elif model_code == 'time_series':
+        print("- 适用场景：时间序列预测、趋势分析、季节性分析")
+        print("- 优势：处理时间依赖数据")
+        print("- 运行命令：python scripts/time_series_analysis.py --input ts_data.csv --output ts_results.csv --model arima --order 1,1,1")
     
-    # 处理自动参数调优
-    if args.auto_tune:
-        print("\n启用自动参数调优：")
-        print("- 使用 RandomizedSearchCV 进行参数搜索")
-        print("- 3折交叉验证评估模型性能")
-        print("- 优化目标：R² 得分")
-    
-    # 处理模型集成
-    if args.ensemble:
-        print("\n启用模型集成：")
-        print("- 使用 StackingRegressor 集成多个模型")
-        print("- 基础模型：XGBoost, Random Forest, SVR")
-        print("- 元模型：Linear Regression")
-    
-    print("\n其他可用命令：")
-    print("- 运行模型评估比较：python scripts/model_evaluator.py --input processed_data.csv --output model_comparison.csv")
-    print("- 运行深度学习模型：python scripts/dnn_model.py --input processed_data.csv --output predictions.csv")
-    print("- 运行模型集成：python scripts/ensemble_model.py --input processed_data.csv --output predictions.csv")
+    print("\n可用命令：")
+    print("\n运筹学模型命令：")
+    print("- 运行线性规划模型：python scripts/linear_programming.py --input lp_data.csv --output lp_results.csv --objective min")
+    print("- 运行动态规划模型：python scripts/dynamic_programming.py --input dp_data.csv --output dp_results.csv --problem_type knapsack")
+    print("- 运行层次分析法模型：python scripts/ahp_model.py --input ahp_data.csv --output ahp_results.csv")
+    print("- 运行非线性规划模型：python scripts/nonlinear_programming.py --input nlp_data.csv --output nlp_results.csv")
+    print("- 运行整数规划模型：python scripts/integer_programming.py --input ip_data.csv --output ip_results.csv")
+    print("- 运行多目标优化模型：python scripts/multi_objective_optimization.py --input moo_data.csv --output moo_results.csv")
+    print("\n经济学模型命令：")
+    print("- 运行博弈论模型：python scripts/game_theory.py --input game_data.csv --output game_results.csv")
+    print("- 运行投入产出分析模型：python scripts/input_output_analysis.py --input io_data.csv --output io_results.csv")
+    print("- 运行成本收益分析模型：python scripts/cost_benefit_analysis.py --input cba_data.csv --output cba_results.csv")
+    print("- 运行综合经济分析模型：python scripts/economic_analysis.py --input economic_data.csv --output economic_results.csv")
+    print("\n统计学与其他模型命令：")
+    print("- 运行假设检验模型：python scripts/hypothesis_testing.py --input test_data.csv --output test_results.csv --test_type t-test")
+    print("- 运行时间序列分析模型：python scripts/time_series_analysis.py --input ts_data.csv --output ts_results.csv --model arima --order 1,1,1")
+    print("- 运行灰色预测模型：python scripts/gray_model.py --input processed_data.csv --output predictions.csv")
+    print("- 运行TOPSIS模型：python scripts/topsis_model.py --input processed_data.csv --output rankings.csv")
 
 
 if __name__ == "__main__":

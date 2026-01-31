@@ -24,13 +24,15 @@ def parse_args():
     parser.add_argument('--optimization', type=bool, default=False, help='Enable optimization-specific preprocessing')
     parser.add_argument('--statistics', type=bool, default=False, help='Enable statistics-specific preprocessing')
     parser.add_argument('--normalization', type=str, default='none', choices=['none', 'standard', 'minmax', 'robust'], help='Normalization method')
+    parser.add_argument('--encoding', type=str, default='utf-8', help='File encoding')
+    parser.add_argument('--sep', type=str, default=None, help='File separator')
     return parser.parse_args()
 
 
-def load_data(file_path, file_format='csv'):
+def load_data(file_path, file_format='csv', encoding='utf-8', sep=None):
     """加载数据"""
     if file_format == 'csv':
-        return pd.read_csv(file_path)
+        return pd.read_csv(file_path, encoding=encoding, sep=sep)
     elif file_format == 'excel':
         return pd.read_excel(file_path)
     else:
@@ -39,15 +41,9 @@ def load_data(file_path, file_format='csv'):
 
 def clean_data(df):
     """数据清洗"""
-    # 处理缺失值
-    df = df.dropna()
-    # 处理异常值
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    for col in numeric_cols:
-        Q1 = df[col].quantile(0.25)
-        Q3 = df[col].quantile(0.75)
-        IQR = Q3 - Q1
-        df = df[(df[col] >= Q1 - 1.5 * IQR) & (df[col] <= Q3 + 1.5 * IQR)]
+    # 处理缺失值（只删除完全为空的行）
+    df = df.dropna(how='all')
+    # 不处理异常值，因为对于门票收入数据，异常值可能是有意义的
     return df
 
 
@@ -167,11 +163,18 @@ def dimensionality_reduction(df, n_components=5):
     """降维处理"""
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     X = df[numeric_cols]
+    # 删除包含NaN值的行
+    X = X.dropna()
+    if len(X) == 0:
+        # 如果所有行都包含NaN值，返回原始数据
+        return df
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     pca = PCA(n_components=n_components)
     X_pca = pca.fit_transform(X_scaled)
     pca_df = pd.DataFrame(X_pca, columns=[f'pca_{i+1}' for i in range(n_components)])
+    # 确保索引匹配
+    pca_df.index = X.index
     return pd.concat([df, pca_df], axis=1)
 
 
@@ -443,7 +446,7 @@ def main():
     
     # 1. 加载数据
     print("加载数据...")
-    df = load_data(args.input, args.file_format)
+    df = load_data(args.input, args.file_format, args.encoding, args.sep)
     print(f"原始数据形状: {df.shape}")
     
     # 2. 数据清洗
